@@ -48,7 +48,7 @@ async def send_msg(user_id, message):
 	except Exception as e:
 		return 500, f"{user_id} : {traceback.format_exc()}\n"
 
-@Bot.on_message(filters.command("start"))
+@Bot.on_message(filters.command("start") & filters.private)
 async def start(bot, cmd):
 	if not await db.is_user_exist(cmd.from_user.id):
 		await db.add_user(cmd.from_user.id)
@@ -59,8 +59,9 @@ async def start(bot, cmd):
 	usr_cmd = cmd.text.split("_")[-1]
 	if usr_cmd == "/start":
 		if Config.UPDATES_CHANNEL:
+			invite_link = await bot.export_chat_invite_link(int(Config.UPDATES_CHANNEL))
 			try:
-				user = await bot.get_chat_member(Config.UPDATES_CHANNEL, cmd.from_user.id)
+				user = await bot.get_chat_member(int(Config.UPDATES_CHANNEL), cmd.from_user.id)
 				if user.status == "kicked":
 					await bot.send_message(
 						chat_id=cmd.from_user.id,
@@ -76,7 +77,10 @@ async def start(bot, cmd):
 					reply_markup=InlineKeyboardMarkup(
 						[
 							[
-								InlineKeyboardButton("🤖 Join Updates Channel", url=f"https://t.me/{Config.UPDATES_CHANNEL}")
+								InlineKeyboardButton("🤖 Join Updates Channel", url=invite_link)
+							],
+							[
+								InlineKeyboardButton("🔄 Refresh 🔄", callback_data="refreshmeh")
 							]
 						]
 					),
@@ -109,9 +113,48 @@ async def start(bot, cmd):
 			)
 		)
 	else:
+		if Config.UPDATES_CHANNEL:
+			invite_link = await bot.export_chat_invite_link(int(Config.UPDATES_CHANNEL))
+			try:
+				user = await bot.get_chat_member(int(Config.UPDATES_CHANNEL), cmd.from_user.id)
+				if user.status == "kicked":
+					await bot.send_message(
+						chat_id=cmd.from_user.id,
+						text="Sorry Sir, You are Banned to use me. Contact my [Support Group](https://t.me/linux_repo).",
+						parse_mode="markdown",
+						disable_web_page_preview=True
+					)
+					return
+			except UserNotParticipant:
+				file_id = int(usr_cmd)
+				await bot.send_message(
+					chat_id=cmd.from_user.id,
+					text="**Please Join My Updates Channel to use this Bot!**\n\nDue to Overload, Only Channel Subscribers can use the Bot!",
+					reply_markup=InlineKeyboardMarkup(
+						[
+							[
+								InlineKeyboardButton("🤖 Join Updates Channel", url=invite_link)
+							],
+							[
+								InlineKeyboardButton("🔄 Refresh / Try Again", url=f"https://telegram.dog/{BOT_USERNAME}?start=AbirHasan2005_{file_id}")
+							]
+						]
+					),
+					parse_mode="markdown"
+				)
+				return
+			except Exception:
+				await bot.send_message(
+					chat_id=cmd.from_user.id,
+					text="Something went Wrong. Contact my [Support Group](https://t.me/linux_repo).",
+					parse_mode="markdown",
+					disable_web_page_preview=True
+				)
+				return
 		try:
 			file_id = int(usr_cmd)
-			await bot.copy_message(chat_id=cmd.from_user.id, from_chat_id=DB_CHANNEL, message_id=file_id)
+			send_stored_file = await bot.copy_message(chat_id=cmd.from_user.id, from_chat_id=DB_CHANNEL, message_id=file_id)
+			await send_stored_file.reply_text(f"**Here is Sharable Link of this file:** https://telegram.dog/{BOT_USERNAME}?start=AbirHasan2005_{file_id}\n\n__To Retrive the Stored File, just open the link!__", disable_web_page_preview=True, quote=True)
 		except Exception as err:
 			await cmd.reply_text(f"Something went wrong!\n\n**Error:** `{err}`")
 
@@ -122,20 +165,25 @@ async def main(bot, message):
 		try:
 			forwarded_msg = await message.forward(DB_CHANNEL)
 			file_er_id = forwarded_msg.message_id
-			await forwarded_msg.reply_text(f"#PRIVATE_FILE:\n\n[{message.from_user.first_name}](tg://user?id={message.from_user.id}) Got File Link!", parse_mode="Markdown")
+			await forwarded_msg.reply_text(f"#PRIVATE_FILE:\n\n[{message.from_user.first_name}](tg://user?id={message.from_user.id}) Got File Link!", parse_mode="Markdown", disable_web_page_preview=True)
 			share_link = f"https://telegram.dog/{BOT_USERNAME}?start=AbirHasan2005_{file_er_id}"
 			await editable.edit(
 				f"**Your File Stored in my Database!**\n\nHere is the Permanent Link of your file: {share_link} \n\nJust Click the link to get your file!",
 				parse_mode="Markdown",
 				reply_markup=InlineKeyboardMarkup(
 					[[InlineKeyboardButton("Open Link", url=share_link)], [InlineKeyboardButton("Bots Channel", url="https://t.me/Discovery_Updates"), InlineKeyboardButton("Support Group", url="https://t.me/linux_repo")]]
-				)
+				),
+				disable_web_page_preview=True
 			)
 		except Exception as err:
 			await editable.edit(f"Something Went Wrong!\n\n**Error:** `{err}`")
 	elif message.chat.type == "channel":
 		if message.chat.id == Config.LOG_CHANNEL:
 			return
+		elif message.chat.id == int(Config.UPDATES_CHANNEL):
+			return
+		else:
+			pass
 		forwarded_msg = None
 		file_er_id = None
 		if message.forward_from_chat:
@@ -222,7 +270,7 @@ async def broadcast_(c, m):
 	        caption=f"broadcast completed in `{completed_in}`\n\nTotal users {total_users}.\nTotal done {done}, {success} success and {failed} failed.",
 	        quote=True
 	    )
-	await aiofiles.os.remove('broadcast.txt')
+	await os.remove('broadcast.txt')
 
 @Bot.on_message(filters.private & filters.command("status") & filters.user(BOT_OWNER))
 async def sts(c, m):
@@ -269,6 +317,58 @@ async def button(bot, cmd: CallbackQuery):
 	elif "gotohome" in cb_data:
 		await cmd.message.edit(
 			HOME_TEXT.format(cmd.message.chat.first_name, cmd.message.chat.id),
+			parse_mode="Markdown",
+			disable_web_page_preview=True,
+			reply_markup=InlineKeyboardMarkup(
+				[
+					[
+						InlineKeyboardButton("Support Group", url="https://t.me/linux_repo"),
+						InlineKeyboardButton("Bots Channel", url="https://t.me/Discovery_Updates")
+					],
+					[
+						InlineKeyboardButton("About Bot", callback_data="aboutbot"),
+						InlineKeyboardButton("About Dev", callback_data="aboutdevs")
+					]
+				]
+			)
+		)
+	elif "refreshmeh" in cb_data:
+		if Config.UPDATES_CHANNEL:
+			invite_link = await bot.export_chat_invite_link(int(Config.UPDATES_CHANNEL))
+			try:
+				user = await bot.get_chat_member(int(Config.UPDATES_CHANNEL), cmd.message.chat.id)
+				if user.status == "kicked":
+					await cmd.message.edit(
+						text="Sorry Sir, You are Banned to use me. Contact my [Support Group](https://t.me/linux_repo).",
+						parse_mode="markdown",
+						disable_web_page_preview=True
+					)
+					return
+			except UserNotParticipant:
+				await cmd.message.edit(
+					text="**You Still Didn't Join ☹️, Please Join My Updates Channel to use this Bot!**\n\nDue to Overload, Only Channel Subscribers can use the Bot!",
+					reply_markup=InlineKeyboardMarkup(
+						[
+							[
+								InlineKeyboardButton("🤖 Join Updates Channel", url=invite_link)
+							],
+							[
+								InlineKeyboardButton("🔄 Refresh 🔄", callback_data="refreshmeh")
+							]
+						]
+					),
+					parse_mode="markdown"
+				)
+				return
+			except Exception:
+				await cmd.message.edit(
+					text="Something went Wrong. Contact my [Support Group](https://t.me/linux_repo).",
+					parse_mode="markdown",
+					disable_web_page_preview=True
+				)
+				return
+		await cmd.message.edit(
+			text=HOME_TEXT.format(cmd.message.chat.first_name, cmd.message.chat.id),
 			parse_mode="Markdown",
 			disable_web_page_preview=True,
 			reply_markup=InlineKeyboardMarkup(
